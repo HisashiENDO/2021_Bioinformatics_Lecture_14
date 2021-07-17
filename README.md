@@ -1,4 +1,4 @@
-# 14th Bioinformatics Lecture materials in 2021
+# 14th Bioinformatics Lecture materials
 
 Code and data used in 14th Bioinformatics Lecture by Hisashi Endo (July 20, 2021).
 
