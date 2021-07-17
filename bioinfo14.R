@@ -71,26 +71,27 @@ rm(list = ls())
 ############### 1. Environment settings #############################
 
 # Install packages
-install.packages("dplyr")     # data manipulation 
-install.packages("ggplot2")   # draw figure
 #install.packages("vegan")     # ecological statistics
-install.packages("pheatmap")  # clustering and heatmap plot
-install.packages("tidyverse")
-install.packages("tidygraph")
-install.packages("ggraph")
+install.packages("ggplot2")    # draw figure
+install.packages("pheatmap")   # clustering and heatmap plot
+install.packages("tidyverse")  # manipulate tidy data
+install.packages("tidygraph")  # manipulate tidy graph
+install.packages("ggraph")     # manipulate ggraph plot
+install.packages("Rcpp")       # Integrate R and C++
+
 
 # Load packages
-library("dplyr")
-library("ggplot2")
 library("vegan")
+library("ggplot2")
 library("pheatmap")
 library("tidyverse")
 library("tidygraph")
 library("ggraph")
+library("Rcpp")
 
 # Set directory
-getwd()   #Print current directory
-# If you use Window VID, check if your current directory is [1] "M:/Desktop/11metagenome"
+getwd()   #Print working directory
+# If you use Window VDI, check if your current directory is [1] "M:/Desktop/11metagenome"
 # If "NO", execute the command below.
 setwd("M:/Desktop/14metagenome") 
 
@@ -99,100 +100,77 @@ setwd("M:/Desktop/14metagenome")
 
 ############### 2. Load abundance table ##############################
 
-# Load abundance file
-raw_df <- read.table("tara_phycodna.txt", header = TRUE)
+# Load frequency file
+tara_df <- read.table("tara_df.txt", header = TRUE)
 
-env_df <- raw_df[,1:4]
-phyco_df <- raw_df[,5:994]
-
-# View data frame
-# View(raw_df)
+# View the profile
+#View(tara_df)
 
 ######################################################################
 #
-  
-############### 3. Preprocessing for the analyses (remove rare phylotypes) ##################
-###
-# This section removes phylotypes emerged less than 10 samples from the dataframe
-####
+
+############### 3. Plot basic data ##############################
+
+# Plot temperature and latitude diagram with generic function
+plot(tara_df$Temperature, tara_df$Latitude)
+
+# Plot temperature and latitude diagram with ggplot function
+ggplot(tara_df, aes(x = Temperature, y = Latitude, color = Biome)) +
+  geom_point()
+
+######################################################################
+#
+
+
+############### 4. Preprocessing for the analyses ##################
+
+## This section removes phylotypes emerged less than 10 samples from the original data
+
+# Separate environmental and frequency information
+meta_df <- tara_df[,1:5]
+virus_df <- tara_df[,6:995]
 
 # Delete phylotypes emerged <10 samples across all samples
 start <- 1
-end <- ncol(raw_df)
+end <- ncol(virus_df)
 delete <- NULL  # Declare delete vector
 for (i in start:end){
-  if (sum(raw_df[,i]!=0) < 10){
+  if (sum(virus_df[,i] != 0) < 10){
     delete <- c(delete, i)
   }
 }
-reduced_df <- raw_df[,-delete]  #Delete rows recorded as "delete" vector
-
-
-sum(raw_df[,i] == 0)) ??
-
-# Check if empty OTU exists
-if (min(sum(raw_df[,i]!=0)) >= 10){
-  print("There is no phylotypes with the coverage less than 10")
-} else {
-  print("There are OTU(s) which needs to be removed")
-}
+virus_df_select <- virus_df[,-delete]  #Delete rows recorded as "delete" vector
 
 # Save 
-write.table(reduced_df, file="reduced_df.tsv", row.names = TRUE, col.names = TRUE)
+write.table(virus_df_select, file="virus_df_select.txt", row.names = TRUE, col.names = TRUE)
 
 ######################################################################
 #
 
 
-############### 4. Make Transpose data frame #########################
-####
-# Then, Transpose data frame for ecological analyses
-####
 
-reduced_df <- as.data.frame(t(reduced_df))
-env_df <- reduced_df[,1:4]
-phyco_df <- reduced_df[,5:297]
-
-# Hereafter, we use "reduced_df" for OTU-based analysis and "reduced_df2" for sample-based analysis
-
-######################################################################
-#
-
-
-############### 4. Rerefaction analysis ##############################
-
-# Show help window
-?rarecurve   #Show help window
-
-# Plot rarefaction curve for raw data
-rarefaction_raw <- rarecurve(t(raw_df), step = 100, xlab = "Number of reads obtained", ylab = "Number of OTUs observed")
-
-# Plot rarefaction curve for reduced data
-rarefaction_reduced <- rarecurve(reduced_df2, step = 100, xlab = "Number of reads obtained", ylab = "Number of OTUs observed")
-
-######################################################################
-#
-
-
-############### 6. Calculate diversity estimates #####################
+############### 5. Calculate diversity estimates #####################
 
 # Calculate diversity
-richness <- specnumber(phyco_df, MARGIN = 1)
-shannon <- diversity(phyco_df, MARGIN = 1, index="shannon", base = exp(1)) # base = natural logarithms
+Richness <- specnumber(virus_df, MARGIN = 1)
+Shannon <- diversity(virus_df, MARGIN = 1, index="shannon", base = exp(1)) # base = natural logarithms
 
-# Plot diversity estimates
-barplot(richness, xlab = "Sample", ylab = "Number of OTUs")
-barplot(shannon, xlab = "Sample", ylab = "Shannon Index")
+# Add diversity estimates to the meta data
+meta_df2 <- cbind(meta_df, Richness, Shannon)
+
+# Plot diversity across biomes 
+ggplot(meta_df2, aes(x=Biome, y=Richness, fill=Biome)) + geom_boxplot()
+ggplot(meta_df2, aes(x=Biome, y=Shannon, fill=Biome)) + geom_boxplot()
 
 ######################################################################
 #
 
 
-############### 7. NMDS ordination ###################################
+############### 6. NMDS ordination ###################################
 
 # Make distance matrix across samples
-df_bray <- vegdist(phyco_df, method="bray") # Bray-Curtis distance
-print(df_bray)  #Print distance matrix
+df_bray <- vegdist(virus_df, method="bray") # Bray-Curtis distance
+#print(df_bray)  #Print distance matrix
 
 #Calculate NMDS coordinates
 nm_xy <- metaMDS(df_bray)
@@ -201,43 +179,37 @@ nm_xy <- metaMDS(df_bray)
 nm_x <- nm_xy$points[,1]
 nm_y <- nm_xy$points[,2]
 
-# Make df summarizing the redults
-metadf <- data.frame(Name=rownames(reduced_df2),
-                     NMDS1 = nm_x, 
-                     NMDS2 = nm_y, 
-                     Richness = richness,
-                     Shannon = shannon,
-                     Biome = reduced_df$Biome,
-                     Latitude = reduced_df$Latitude)
+# Add NMDS coordinates to the meta data
+meta_df3 <- data.frame(meta_df2, 
+                       NMDS1 = nm_x, 
+                       NMDS2 = nm_y
+                       )
 
-View(metadf)
+View(meta_df3)  # View df
 
 # Plot NMDS ordination
-nmplot1 <- ggplot(metadf, aes(x=NMDS1, y=NMDS2)) + 
-  geom_point(size=3) + 
-  #geom_text(aes(x=NMDS1+0.01, label=Name), size=5, hjust=0)
+ggplot(meta_df3, aes(x=NMDS1, y=NMDS2)) + 
+  geom_point(size=2) + 
+  geom_text(aes(x=NMDS1+0.01, label=Sample), size=2, hjust=0) +
   theme(legend.position = "bottom")
-print(nmplot1)
+
+# Plot NMDS ordination with temperature
+ggplot(meta_df3, aes(x=NMDS1, y=NMDS2, fill=Temperature)) + 
+  geom_point(shape=21, size=3) + 
+  geom_text(aes(x=NMDS1+0.01, label=Sample), size=2, hjust=0) +
+  scale_fill_gradient(low="blue", high="red")
 
 # Plot NMDS ordination with diversity information
-nmplot2 <- ggplot(metadf, aes(x=NMDS1, y=NMDS2, color=Richness)) + 
-  geom_point(size=3) + 
-  #geom_text(aes(x=NMDS1+0.01, label=Name), size=5, hjust=0) + 
-  scale_colour_gradient(low="orange", high="blue")
-print(nmplot2)
-
-# Plot NMDS ordination with Biome information
-nmplot3 <- ggplot(metadf, aes(x=NMDS1, y=NMDS2, fill=Biome)) + 
+ggplot(meta_df3, aes(x=NMDS1, y=NMDS2, fill=Richness)) + 
   geom_point(shape=21, size=3) + 
-  #geom_text(aes(x=NMDS1+0.01, label=Name), size=5, hjust=0) + 
-  scale_colour_gradient(low="orange", high="blue")
-print(nmplot3)
+  geom_text(aes(x=NMDS1+0.01, label=Sample), size=2, hjust=0) +
+  scale_fill_gradient(low="blue", high="red")
 
 ######################################################################
 #
 
 
-############### 8. OTU-cooccurrence analysis ##################################
+############### 7. Heatmap and clustering analysis ##################################
 
 # Make function to analysze df (it takes time!!)
 make_heatmap_clustering <- function(data){
@@ -252,58 +224,71 @@ make_heatmap_clustering <- function(data){
     clustering_method = "average",  #Clusterung method
     fontsize = 8,
     legend=TRUE,
-    color = colorRampPalette(c("royalblue", "firebrick3", "white"))(50),
+    color = colorRampPalette(c("red", "orange", "white"))(20)
   )
 }
 
-# Execute function for OTU data
-make_heatmap_clustering(phyco_df)
+# Execute function for virus frequency data
+make_heatmap_clustering(virus_df)
 
 ######################################################################
 #
 
 
-############### 9. Co-occurrence network analysis ##################################
+############### 8. Co-abundance network analysis ##################################
 
-# Convert "charactor" matrix to "numeric" matrix
-phyco_df_n <- apply(phyco_df, 2, as.numeric) # 1 or 2で 行列が入れ替わる
+# Calcurate pairwise correlations between viruses
+cor.mat <- cor(virus_df_select, use = "everything", method = "spearman")
 
-# Calcurate correlatiuon between sample
-cor.mat <- cor(phyco_df_n, use = "everything", method = "spearman")
-# Also try: test <- as.matrix(vegdist(dft, "bray"))
-
-# Matrixの上三角行列を削除
+# Remove upper symmetric matrix
 cor.mat[upper.tri(cor.mat, diag = TRUE)] <- NA
 
-# Long-Formatに変換して相関係数0.7以上に絞り込み
-d <- cor.mat %>%
-  as.data.frame() %>%
-  mutate(ids1 = colnames(phyco_df)) %>%
-  gather(key = ids2, value = cor, -ids1) %>%
-  filter(!is.na(cor) & cor >= 0.7)
-head(d)
+# View correlation matrix
+#View(cor.mat)
 
-# percentage of connection against all possible connections
-nrow(d)*100/(ncol(phyco_df)^2)
+# Make dataset used for the network plot
+cor.df <- cor.mat %>%
+  as.data.frame() %>%         # Convert from matrix to data frame
+  mutate(ids1 = rownames(cor.mat)) %>%           # Add column to the data frame
+  gather(key = ids2, value = cor, -ids1) %>%     # Transform to long-format 
+  filter(!is.na(cor) & cor >= 0.7)               # Remove pairs with the correlation <0.7 
+#View(cor.df)
 
-
-# df -> tbl_graphオブジェクトへの変換
-g <- as_tbl_graph(d, directed = FALSE) # if directed graph, chose TRUE
+# Convert data frame to tbl_graph object
+g <- as_tbl_graph(cor.df, directed = FALSE)
 
 # Add node degree
 g <-  g %>% mutate(degree = centrality_degree())
 
-
-plot1 <- g %>%
+# Plot co-abundance network
+netplot <- g %>%
   ggraph(layout = "kk") +
-  geom_edge_link(aes(width=cor), alpha = 0.6, colour = "gray50") +
   scale_edge_width(range = c(0.1, 1)) +
+  geom_edge_link(aes(width=cor), colour = "gray50") +
   geom_node_point(aes(fill=degree), size=3, shape = 21, alpha=0.7) +
-  #scale_color_manual(values = colnode_circle) +
-  #scale_fill_manual(values = colnodes) +
   scale_fill_gradient(low = "yellow", high = "forestgreen", guide = "colourbar") +
-#geom_node_point(aes(size = degree, colour = community, fill=community), shape = 21, alpha=0.7) +
-  #geom_node_text(aes(label = name, colour=community,), repel = TRUE) +
   theme_graph(background = "white")
-plot1
+plot(netplot)
 
+
+# !!! If you got trouble on usable font, please try the following commands.
+# This process will be skiped in the lecture as it tales long time..
+# library(extrafont)
+# font_import()
+
+######################################################################
+#
+
+
+############### 9. Supplementary code  ##################################
+
+# Save plot
+fig <- ggplot(tara_df, aes(x = Temperature, y = Latitude, color = Biome)) + 
+  geom_point()
+ggsave(filename = "fig.pdf", plot= fig, width=120, height=100, units="mm", dpi = 300 )
+
+# Save data object
+write.table(virus_df_select, file="virus_df_select.csv", sep = ",", row.names = TRUE, col.names = TRUE)
+
+######################################################################
+#
